@@ -1125,8 +1125,8 @@ function robRunQC_Daily(data){
   const s=data.summary||{},at=s.accessType24h||{},hourly=data.hourly||[];
   const issues=[];
   const accessTypeTotal=Object.values(at).reduce((a,v)=>a+robNum(v),0);
-  const totalIn=robNum(s.totalIn),totalOut=robNum(s.totalOut);
-  if(accessTypeTotal!==totalIn)issues.push(`ACCESS TYPE TOTAL (${accessTypeTotal}) tidak sama dengan TOTAL IN (${totalIn}). Ada transaksi IN yang belum terpetakan atau mapping Access Type bermasalah.`);
+  const totalIn=robNum(s.totalIn),totalOut=robNum(s.totalOut),totalEventsCheck=totalIn+totalOut;
+  if(accessTypeTotal!==totalEventsCheck)issues.push(`ACCESS TYPE TOTAL (${accessTypeTotal}) tidak sama dengan TOTAL EVENT IN+OUT (${totalEventsCheck}). Ada transaksi yang belum terpetakan atau mapping Access Type bermasalah.`);
   const sumHourIn=hourly.reduce((a,h)=>a+robNum(h.in),0),sumHourOut=hourly.reduce((a,h)=>a+robNum(h.out),0);
   if(sumHourIn!==totalIn)issues.push(`Total grafik IN (${sumHourIn}) tidak cocok dengan TOTAL IN (${totalIn}).`);
   if(sumHourOut!==totalOut)issues.push(`Total grafik OUT (${sumHourOut}) tidak cocok dengan TOTAL OUT (${totalOut}).`);
@@ -1154,7 +1154,7 @@ function robRenderDailyResult(data,qc){
   <div class="cc"><div class="stat"><b>${s.openingInside||0}</b><span>OPENING INSIDE</span></div><div class="stat"><b>${s.totalIn||0}</b><span>IN</span></div><div class="stat"><b>${s.totalOut||0}</b><span>OUT</span></div><div class="stat"><b>${s.totalInside||0}</b><span>STILL INSIDE</span></div><div class="stat"><b>${s.cars||0}</b><span>MOBIL</span></div><div class="stat"><b>${s.motorcycles||0}</b><span>MOTOR</span></div></div>
   ${qcHtml}
   <div class="label" style="margin-top:12px">DISTRIBUSI ACCESS TYPE</div>
-  <div class="tablewrap"><table class="table"><tr><th>Access Type</th><th>Jumlah</th><th>%</th></tr>${atRows}<tr><td><b>TOTAL ACCESS TYPE</b></td><td><b>${accessTypeTotal}</b></td><td><b>100%</b></td></tr><tr><td><b>TOTAL EVENT IN + OUT</b></td><td><b>${Number(s.totalIn||0)+Number(s.totalOut||0)}</b></td><td>—</td></tr></table></div>
+  <div class="tablewrap"><table class="table"><tr><th>Access Type</th><th>Jumlah</th><th>%</th></tr>${atRows}<tr><td><b>TOTAL ACCESS TYPE</b></td><td><b>${s.accessTypeTotal||0}</b></td><td><b>100%</b></td></tr><tr><td><b>TOTAL EVENT IN + OUT</b></td><td><b>${Number(s.totalIn||0)+Number(s.totalOut||0)}</b></td><td>—</td></tr></table></div>
   <div class="label" style="margin-top:12px">GRAFIK AKTIVITAS PER JAM</div>
   <div>${renderHourlyChart(data.hourly||[],{title:'Access Activity by Hour'})}</div>
   <div class="actions" style="margin-top:12px"><button id="robExportExcel" class="btn orange" type="button">⬇ EXCEL</button><button id="robPrintPdf" class="btn" type="button">🖨 PDF</button></div>
