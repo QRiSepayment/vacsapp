@@ -54,7 +54,6 @@ Sarah
 <section id="robot" class="panel"><div class="card"><div class="label">🤖 VACS OFFICE ROBOT — AUTOMATED REPORT ENGINE</div><div class="hint">"Saya masukkan data. Serahkan sisanya kepada saya." Pilih jenis laporan lalu tekan GENERATE — robot mengumpulkan data VACS, membersihkan, memvalidasi, menghitung, membuat ringkasan &amp; grafik secara otomatis. Robot ini memanggil mesin Report/Excel/PDF VACS yang sudah ada (read-only, tidak pernah mengubah data) — bukan mesin baru yang terpisah.</div>
 <div class="formgrid">
 <div class="field"><label>JENIS LAPORAN</label><select id="robProfile"><option value="daily">📅 Laporan Akses Harian (Daily)</option><option value="weekly">📅 Laporan Mingguan (Weekly)</option><option value="monthly">📅 Laporan Bulanan (Monthly)</option><option value="current">🚗 Laporan Currently Inside</option></select></div>
-<div class="field" id="robDateField"><label>TANGGAL</label><input id="robDate" type="date"></div>
 <div class="field" id="robTypeField"><label>ACCESS TYPE</label><select id="robType"><option value="ALL">ALL</option><option>VISITOR</option><option>CONTRACTOR</option><option>VENDOR</option><option>EMPLOYEE</option><option>EMERGENCY VEHICLE</option><option>DELIVERY</option><option>TEMPORARY VEHICLE</option><option>VIP</option></select></div>
 </div>
 <div class="actions"><button id="robGenBtn" class="btn green" type="button">🤖 GENERATE REPORT — LET VACS DO IT</button></div>
@@ -116,7 +115,23 @@ const TYPES=['VISITOR','CONTRACTOR','VENDOR','EMPLOYEE','EMERGENCY VEHICLE','DEL
 function accessTypeNorm(v){const t=String(v??'').trim().replace(/\s+/g,' ').toUpperCase();if(!t)return'VISITOR';if(t==='SP'||t==='SUPPORTPARTNER')return'SUPPORT PARTNER';return t}
 const IDB={name:'vacs_offline_v2',queue:'queue',master:'master',meta:'meta'};
 function toast(t){const x=$('toast');x.textContent=t;x.classList.add('show');clearTimeout(window.__t);window.__t=setTimeout(()=>x.classList.remove('show'),3500)}
-function apiOnce_(base,p,t){return new Promise((res,rej)=>{const cb='vacs_'+Date.now()+'_'+Math.random().toString(36).slice(2),s=document.createElement('script');let done=0;const fin=(f,v)=>{if(done)return;done=1;delete window[cb];try{s.remove()}catch(e){};f(v)};window[cb]=d=>fin(res,d);s.onerror=()=>fin(rej,Error('JSONP network/CSP error'));s.src=base+'?'+new URLSearchParams({...p,callback:cb,_t:Date.now()});document.body.appendChild(s);setTimeout(()=>fin(rej,Error('JSONP timeout')),t)})}
+const __vacsApiInflight=new Map();
+function apiOnce_(base,p,t){
+  const key=base+'|'+JSON.stringify(p||{});
+  if(__vacsApiInflight.has(key))return __vacsApiInflight.get(key);
+  const promise=new Promise((res,rej)=>{
+    const cb='vacs_'+Date.now()+'_'+Math.random().toString(36).slice(2),s=document.createElement('script');
+    let done=0,timer=null;
+    const fin=(f,v)=>{if(done)return;done=1;if(timer)clearTimeout(timer);delete window[cb];try{s.remove()}catch(e){};f(v)};
+    window[cb]=d=>fin(res,d);
+    s.onerror=()=>fin(rej,Error('JSONP network/CSP error'));
+    s.src=base+'?'+new URLSearchParams({...p,callback:cb,_t:Date.now()});
+    document.body.appendChild(s);
+    timer=setTimeout(()=>fin(rej,Error('JSONP timeout')),t);
+  }).finally(()=>__vacsApiInflight.delete(key));
+  __vacsApiInflight.set(key,promise);
+  return promise;
+}
 function apiBridgeOnce_(base,p,t){return new Promise((res,rej)=>{const id='vacs_bridge_'+Date.now()+'_'+Math.random().toString(36).slice(2),f=document.createElement('iframe');let done=0;const timer=setTimeout(()=>fin(rej,Error('Bridge timeout')),t);function fin(fn,v){if(done)return;done=1;clearTimeout(timer);window.removeEventListener('message',onmsg);try{f.remove()}catch(e){};fn(v)}function onmsg(ev){if(ev.source!==f.contentWindow)return;const d=ev.data||{};if(d.__vacsBridge!==id)return;if(d.ok===false)fin(rej,Error(d.message||'Bridge request failed'));else fin(res,d)}window.addEventListener('message',onmsg);f.style.display='none';f.src=base+'?'+new URLSearchParams({...p,bridge:'1',bridgeId:id,_t:Date.now()});document.body.appendChild(f)})}
 const isOperaMini=/Opera Mini/i.test(navigator.userAgent||'');
 function sleep_(ms){return new Promise(r=>setTimeout(r,ms))}
@@ -135,7 +150,7 @@ async function api(p,timeout=12000,retries=1){
 }
 async function call(p,t=20000){return api(p,t,isOperaMini?2:1)}
 function online(v){if(arguments.length){serverOnline=!!v;$('status').textContent=serverOnline?'● READY • SERVER ONLINE':'● READY • LOCAL MODE';$('status').classList.toggle('online',serverOnline);$('status').style.background=serverOnline?'#145b3b':'#8a4b00'}return serverOnline}
-async function health(){try{const r=await api({action:'health'},20000,1);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){if(!serverOnline)online(false);return false}}
+async function health(){try{const r=await api({action:'health'},20000,1);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){online(false);return false}}
 function localISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function makeEventId(){try{if(window.crypto?.randomUUID)return 'EVT-'+window.crypto.randomUUID()}catch(e){}return 'EVT-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,10).toUpperCase()}
 function fmtTime(v){const s=String(v??'').trim();if(!s)return s;if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)){const d=new Date(s);if(!isNaN(d))return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Jakarta'})}const m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);if(m)return `${String(m[1]).padStart(2,'0')}:${m[2]}`;return s}
@@ -260,8 +275,8 @@ function template(){if(!window.XLSX)return toast('Library Excel belum siap.');co
 async function current(){try{const r=await call({action:'current'}),a=r.data||[];$('currentList').className=a.length?'tablewrap':'empty';$('currentList').innerHTML=a.length?`<table class="table"><tr><th>Nama</th><th>Nomor Kendaraan</th><th>Divisi</th><th>Access Type</th><th>Jam IN</th><th>Tanggal</th></tr>${a.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.plate)}</td><td>${esc(x.division)}</td><td>${esc(x.accessType||x.type||'')}</td><td>${esc(fmtTime(x.inTime))}</td><td>${esc(x.date)}</td></tr>`).join('')}</table>`:'Tidak ada kendaraan di dalam.'}catch(e){$('currentList').textContent='❌ '+e.message}}
 async function audit(){try{const r=await call({action:'audit',q:$('auditSearch').value}),a=r.data.events||[];$('auditList').className=a.length?'tablewrap':'empty';$('auditList').innerHTML=a.length?`<table class="table"><tr><th>Timestamp</th><th>Created By</th><th>Action</th><th>Nomor Kendaraan</th><th>Nama</th><th>Result</th><th>Detail</th></tr>${a.map(x=>`<tr><td>${esc(fmtTime(x.timestamp))}</td><td>${esc(x.createdBy)}</td><td>${esc(x.action)}</td><td>${esc(x.plate)}</td><td>${esc(x.name)}</td><td>${esc(x.result)}</td><td>${esc(x.detail)}</td></tr>`).join('')}</table>`:'Tidak ada audit event.'}catch(e){$('auditList').textContent='❌ '+e.message}}
 async function backup(){const b=$('backupBtn');b.disabled=true;try{const r=await call({action:'backup'},30000);if(!r.ok)throw Error(r.message);$('backupResult').textContent=`✓ Backup dibuat: ${r.data.name}`;$('backupResult').className='result show ok'}catch(e){$('backupResult').textContent='❌ '+e.message;$('backupResult').className='result show err'}finally{b.disabled=false}}
-function reportDateParts(){const v=$('rDate').value;if(!v)throw Error('Pilih tanggal report terlebih dahulu.');const [y,m,d]=v.split('-');return{iso:v,year:y,month:m,day:d}}
-function hariTanggal(v){const s=String(v??'').trim();let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);if(!m)return s;const d=Number(m[1]),mo=Number(m[2]),y=Number(m[3]);const dt=new Date(Date.UTC(y,mo-1,d));const hari=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][dt.getUTCDay()];return `${hari}, ${String(d).padStart(2,'0')} ${['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][mo-1]} ${y}`}
+function reportDateParts(){const v=GDR?.to;if(!v)throw Error('Pilih tanggal report terlebih dahulu.');const [y,m,d]=v.split('-');return{iso:v,year:y,month:m,day:d}}
+function hariTanggal(v){const s=String(v??'').trim();let y,mo,d,m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T.*)?$/);if(m){y=Number(m[1]);mo=Number(m[2]);d=Number(m[3])}else{m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);if(!m)return s;d=Number(m[1]);mo=Number(m[2]);y=Number(m[3])}const dt=new Date(Date.UTC(y,mo-1,d));if(isNaN(dt.getTime()))return s;const hari=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][dt.getUTCDay()];return `${hari}, ${String(d).padStart(2,'0')} ${['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][mo-1]} ${y}`}
 function fileDateName(v){const s=String(v??'').trim();let d,mo,y;let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);if(m){d=Number(m[1]);mo=Number(m[2]);y=Number(m[3])}else{m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m){y=Number(m[1]);mo=Number(m[2]);d=Number(m[3])}else{const dt=new Date();y=dt.getFullYear();mo=dt.getMonth()+1;d=dt.getDate()}}const dt=new Date(Date.UTC(y,mo-1,d));const hari=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][dt.getUTCDay()];return `${hari},_${String(d).padStart(2,'0')}_${String(mo).padStart(2,'0')}_${y}`}
 async function report(){try{const type=$('rType').value;const period=$('rPeriodType')?.value||'daily';if(period==='weekly')gdrSetPreset('week');else if(period==='monthly')gdrSetPreset('month');gdrEnsureValid();const merged=await gdrFetchRangeReport(type);lastReport=merged;const s=merged.summary||{},at=s.accessType24h||{};$('reportSummary').innerHTML=`<div class="stat"><b>${s.openingInside||0}</b><span>OPENING INSIDE</span></div><div class="stat"><b>${s.totalIn||0}</b><span>IN PERIODE</span></div><div class="stat"><b>${s.totalOut||0}</b><span>OUT PERIODE</span></div><div class="stat"><b>${s.totalInside||0}</b><span>STILL INSIDE</span></div><div class="stat"><b>${s.cars||0}</b><span>MOBIL IN</span></div><div class="stat"><b>${s.motorcycles||0}</b><span>MOTOR IN</span></div><div class="stat"><b>${s.total24h||0}</b><span>TOTAL ACCESS TYPE PERIODE</span></div>`;const rows=merged.rows||[];$('reportTable').className='tablewrap';$('reportTable').innerHTML=`<table class="table"><tr><th>Nama</th><th>Nomor Kendaraan</th><th>Bagian/Divisi</th><th>Jenis Kendaraan</th><th>Access Type</th><th>Model</th><th>Warna</th><th>Jam IN</th><th>Hari/Tanggal IN</th><th>Jam OUT</th><th>Hari/Tanggal OUT</th><th>Status</th><th>Keterangan</th></tr>${rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.plate)}</td><td>${esc(x.division)}</td><td>${esc(x.vehicleType||'')}</td><td>${esc(x.accessType||x.type||'')}</td><td>${esc(x.model)}</td><td>${esc(x.color)}</td><td>${esc(fmtTime(x.inTime))}</td><td>${esc(hariTanggal(x.inDate||x.date))}</td><td>${esc(fmtTime(x.outTime))}</td><td>${x.outDate?esc(hariTanggal(x.outDate)):'—'}</td><td>${esc(x.status||'')}</td><td>${esc(x.notes)}</td></tr>`).join('')||'<tr><td colspan="13">Tidak ada data pada periode tersebut.</td></tr>'}</table><div class="card" style="margin-top:10px"><div class="label">SUMMARY ACCESS TYPE • PERIODE AKTIF</div><div class="cc">${Object.keys(at).sort().map(k=>`<div class="stat"><b>${at[k]||0}</b><span>${esc(k)}</span></div>`).join('')||'<div class="empty">Tidak ada transaksi Access Type.</div>'}</div><div class="hint" style="margin-top:8px;font-weight:900">TOTAL: ${s.total24h||0}</div></div><div class="card" id="reportChartCard" style="margin-top:10px"><div class="label">GRAFIK JAM MASUK / KELUAR • PERIODE AKTIF</div><div id="reportChart">${renderHourlyChart(merged.hourly||[],{title:gdrReadoutText().replace('Periode aktif: ','')+' • TYPE '+(type||'ALL')})}</div></div>`}catch(e){$('reportTable').className='empty';$('reportTable').textContent='❌ '+e.message}}
 
@@ -288,7 +303,7 @@ function renderVehicleResults(items,queries){const el=$('result');if(!items.leng
 el.querySelector('#selectAllVehicles')?.addEventListener('click',()=>{el.querySelectorAll('.vehicleCheck').forEach(c=>c.checked=true);syncVehicleSelection(items)});
 el.querySelector('#clearVehicles')?.addEventListener('click',()=>{el.querySelectorAll('.vehicleCheck').forEach(c=>c.checked=false);syncVehicleSelection(items)});
 el.querySelectorAll('.vehicleCheck').forEach(c=>c.addEventListener('change',()=>syncVehicleSelection(items)))}
-function syncVehicleSelection(items){selectedVehicles=[...$('result').querySelectorAll('.vehicleCheck')].filter(c=>c.checked).map(c=>items[Number(c.dataset.index)]).filter(Boolean);selected=selectedVehicles[0]||null;showVehicle(selected);$('result').classList.add('show');const checked=selectedVehicles.length;$('inBtn').textContent=checked?`✓ VEHICLE IN (${checked})`:'✓ VEHICLE IN';$('outBtn').textContent=checked?`↗ VEHICLE OUT (${checked})`:'↗ VEHICLE OUT';}
+function syncVehicleSelection(items){const res=$('result');if(!res)return;selectedVehicles=[...res.querySelectorAll('.vehicleCheck')].filter(c=>c.checked).map(c=>items[Number(c.dataset.index)]).filter(Boolean);selected=selectedVehicles[0]||null;showVehicle(selected);res.classList.add('show');const checked=selectedVehicles.length;$('inBtn').textContent=checked?`✓ VEHICLE IN (${checked})`:'✓ VEHICLE IN';$('outBtn').textContent=checked?`↗ VEHICLE OUT (${checked})`:'↗ VEHICLE OUT';}
 let searchDebounceT=null,searchReqSeq=0;
 function splitVehicleQueries(raw){return String(raw||'').split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean).filter((x,i,a)=>a.findIndex(y=>y.toUpperCase()===x.toUpperCase())===i)}
 function searchVehicle(){clearTimeout(searchDebounceT);searchDebounceT=setTimeout(searchVehicleNow,120)}
@@ -437,7 +452,7 @@ async function svgToPng_(svgEl,scale){
   const vb=svgEl.viewBox&&svgEl.viewBox.baseVal;
   const w=(vb&&vb.width)||760,h=(vb&&vb.height)||240;
   const xml=new XMLSerializer().serializeToString(svgEl);
-  const url='data:image/svg+xml;charset=utf-8;base64,'+btoa(unescape(encodeURIComponent(xml)));
+  const bytes=new TextEncoder().encode(xml);let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));const url='data:image/svg+xml;charset=utf-8;base64,'+btoa(bin);
   const img=new Image();
   await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=url});
   const cv=document.createElement('canvas');cv.width=w*scale;cv.height=h*scale;
@@ -467,7 +482,7 @@ unmuteBtn&&unmuteBtn.addEventListener('click',()=>{vid.muted=false;vid.play().ca
 btn&&btn.addEventListener('click',enterApp);
 })();
 function setResult(id,msg,cls){const el=$(id);if(!el)return;el.textContent=msg;el.className='result show '+(cls||'ok')}
-function switchTab(tab){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));const g=$('gdrBar');if(g)g.style.display=tab==='gate'?'none':'';if(tab==='command'&&!switchTab.__cc){switchTab.__cc=1;commandCenter()}}
+function switchTab(tab){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===tab));const g=$('gdrBar');if(g){const historical=['report','robot','office','command'];g.style.display=historical.includes(tab)?'':'none'}if(tab==='command'&&!switchTab.__cc){switchTab.__cc=1;commandCenter()}}
 async function deleteVehicle(){const plate=$('delPlate').value.trim(),pin=$('adminPin').value.trim();if(!plate)return setResult('deleteResult','Nomor kendaraan wajib diisi.','err');if(!pin)return setResult('deleteResult','PIN Admin wajib diisi.','err');try{const r=await call({action:'deleteVehicle',plate,pin});if(!r.ok)throw Error(r.message);setResult('deleteResult','✓ '+(r.data?.message||'Kendaraan dihapus dari MASTER.'),'ok');$('delPlate').value='';$('adminPin').value='';dash()}catch(e){setResult('deleteResult','❌ '+e.message,'err')}}
 async function deleteAccessEventsRange(){
   const fromDate=$('delEvFrom').value,toDate=$('delEvTo').value||fromDate,pin=$('delEvPin').value.trim();
@@ -487,6 +502,10 @@ async function deleteAccessEventsRange(){
 }
 /* ================= GLOBAL DATE RANGE (GDR) ================= */
 let GDR={preset:'day',from:localISO(),to:localISO()};
+const GDR_CACHE=new Map();
+function gdrCacheKey(type){return `${GDR.from}|${GDR.to}|${String(type||'ALL').toUpperCase()}`}
+function gdrInvalidateCache(){GDR_CACHE.clear()}
+
 function gdrPad(n){return String(n).padStart(2,'0')}
 function gdrISO(d){return `${d.getFullYear()}-${gdrPad(d.getMonth()+1)}-${gdrPad(d.getDate())}`}
 function gdrParseISO(iso){const[y,m,d]=String(iso).split('-').map(Number);return new Date(y,(m||1)-1,d||1)}
@@ -507,8 +526,6 @@ function gdrRender(){
   document.querySelectorAll('.gdrPresetBtn').forEach(b=>b.classList.toggle('active',b.dataset.gdrPreset===GDR.preset));
   const readout=document.querySelector('.gdrReadout');
   if(readout)readout.textContent=gdrReadoutText();
-  if($('rDate')){$('rDate').value=GDR.to;$('rDate').disabled=true;$('rDate').title='Dikontrol oleh Global Date Range di atas'}
-  if($('robDate')){$('robDate').value=GDR.to;$('robDate').disabled=true;$('robDate').title='Dikontrol oleh Global Date Range di atas'}
   gdrPersist();
 }
 function gdrSetPreset(preset){
@@ -517,9 +534,9 @@ function gdrSetPreset(preset){
   else if(preset==='week')GDR={preset,from:gdrAddDays(today,-6),to:today};
   else if(preset==='month'){const r=gdrMonthRange(today);GDR={preset,from:r.from,to:r.to}}
   else GDR={preset:'custom',from:GDR.from||today,to:GDR.to||today};
-  gdrRender();
+  gdrInvalidateCache();gdrRender();
 }
-function gdrOnManualChange(which,val){if(!val)return;GDR={...GDR,preset:'custom',[which]:val};gdrRender()}
+function gdrOnManualChange(which,val){if(!val)return;GDR={...GDR,preset:'custom',[which]:val};gdrInvalidateCache();gdrRender()}
 function gdrBind(){
   document.querySelectorAll('.gdrPresetBtn').forEach(b=>b.addEventListener('click',()=>gdrSetPreset(b.dataset.gdrPreset)));
   const fromEl=document.querySelector('.gdrFrom'),toEl=document.querySelector('.gdrTo');
@@ -543,6 +560,8 @@ function gdrMergeReportData(acc,data,iso,isFirst,isLast){
 }
 async function gdrFetchRangeReport(type){
   gdrEnsureValid();
+  const key=gdrCacheKey(type);
+  if(GDR_CACHE.has(key))return GDR_CACHE.get(key);
   const r=await call({action:'report',from:GDR.from,to:GDR.to,type},30000);
   if(!r.ok)throw Error(r.message||'Report gagal untuk periode Global Date Range.');
   const data=r.data||{};
@@ -551,6 +570,7 @@ async function gdrFetchRangeReport(type){
   data.reportLogDate=GDR.to;
   data.rangeFrom=GDR.from;
   data.rangeTo=GDR.to;
+  GDR_CACHE.set(key,data);
   return data;
 }
 function bind(){if($('mAccessType'))$('mAccessType').addEventListener('change',updateCustomAccessUI);if($('aType'))$('aType').addEventListener('change',updateCustomAccessUI);
@@ -584,7 +604,7 @@ $('generateReport')?.addEventListener('click',report);$('rPeriodType')?.addEvent
 $('exportReport')?.addEventListener('click',exportReport);
 $('printReport')?.addEventListener('click',printReport);
 }
-try{initTypes();if($('dashDate'))$('dashDate').value=localISO();if($('ccFrom'))$('ccFrom').value=localISO();if($('ccTo'))$('ccTo').value=localISO();if($('rDate'))$('rDate').value=localISO();if($('aFrom'))$('aFrom').value=localISO();if($('aUntil'))$('aUntil').value=localISO();if($('deviceId'))$('deviceId').value=localStorage.getItem('vacsDeviceId')||'';bind();gdrBind();gdrRestore();if($('rPeriodType'))$('rPeriodType').value='daily';gdrRender();if($('gdrBar'))$('gdrBar').style.display='none';loadGates();}catch(e){console.error('VACS UI initialization failed:',e);toast('❌ UI gagal diinisialisasi: '+e.message)}
+try{initTypes();if($('dashDate'))$('dashDate').value=localISO();if($('ccFrom'))$('ccFrom').value=localISO();if($('ccTo'))$('ccTo').value=localISO();if($('aFrom'))$('aFrom').value=localISO();if($('aUntil'))$('aUntil').value=localISO();if($('deviceId'))$('deviceId').value=localStorage.getItem('vacsDeviceId')||'';bind();gdrBind();gdrRestore();if($('rPeriodType'))$('rPeriodType').value='daily';gdrRender();if($('gdrBar'))$('gdrBar').style.display='none';loadGates();}catch(e){console.error('VACS UI initialization failed:',e);toast('❌ UI gagal diinisialisasi: '+e.message)}
 let __vacsReconnectBusy=false,__vacsReconnectDelay=15000;async function __vacsRecover(){if(__vacsReconnectBusy)return;__vacsReconnectBusy=true;try{const ok=await health();if(ok){__vacsReconnectDelay=15000;await syncMasterCache();await syncQueue();await dash();try{await commandCenter()}catch(e){}}else __vacsReconnectDelay=Math.min(__vacsReconnectDelay*2,120000)}finally{__vacsReconnectBusy=false;setTimeout(__vacsRecover,__vacsReconnectDelay)}}
 (async()=>{online(false);const master=await syncMasterCache();const ok=await health();if(ok||master){if(ok){await dash();try{await refreshAuth();await syncQueue()}catch(e){}}else{try{await syncQueue()}catch(e){}}}else{authCache=JSON.parse(localStorage.getItem('vacsAuthCache')||'[]');renderAuth()}setTimeout(__vacsRecover,__vacsReconnectDelay)})();
 window.addEventListener('online',()=>{__vacsReconnectDelay=15000;__vacsRecover()});
@@ -1053,6 +1073,8 @@ oeInit();
 (function(){
 const ROBOT_PROFILES={
   daily:{needsDate:false,needsType:true},
+  weekly:{needsDate:false,needsType:true},
+  monthly:{needsDate:false,needsType:true},
   current:{needsDate:false,needsType:false}
 };
 function robSteps(profile){
@@ -1164,7 +1186,7 @@ async function robGenerate(){
       const type=$('robType').value;
       data=await gdrFetchRangeReport(type);
       lastReport=data;
-      if($('rDate'))$('rDate').value=GDR.to;if($('rType'))$('rType').value=type;
+      if($('rType'))$('rType').value=type;if($('rPeriodType'))$('rPeriodType').value=profile;gdrRender();
     }else{
       const r=await call({action:'current'},20000);
       rows=r.data||[];
@@ -1197,12 +1219,9 @@ async function robGenerate(){
 }
 function robToggleFields(){
   const p=$('robProfile').value,cfg=ROBOT_PROFILES[p];
-  $('robDateField').style.display='none';
   $('robTypeField').style.display=cfg.needsType?'':'none';
-  if($('robDate')){$('robDate').value=GDR.to||localISO();$('robDate').disabled=true}
 }
 function robInit(){
-  if($('robDate')&&!$('robDate').value)$('robDate').value=GDR.to||localISO();
   robToggleFields();
   $('robProfile').addEventListener('change',robToggleFields);
   $('robGenBtn').addEventListener('click',robGenerate);
